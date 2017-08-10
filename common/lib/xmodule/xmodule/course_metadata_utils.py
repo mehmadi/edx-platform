@@ -116,7 +116,8 @@ def may_certify_for_course(certificates_display_behavior, certificates_show_befo
         certificate_available_date
         and certificate_available_date < datetime.now(utc)
     )
-    return past_availability_date or show_early or has_ended
+
+    return True if show_early or has_ended else past_availability_date
 
 
 def sorting_score(start, advertised_start, announcement):
