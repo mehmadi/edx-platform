@@ -137,6 +137,11 @@ class PassingGradeCertsTest(ModuleStoreTestCase):
             is_active=True,
             mode="verified",
         )
+        attempt = SoftwareSecurePhotoVerification.objects.create(
+            user=self.user,
+            status='submitted'
+        )
+        attempt.approve()
 
     def test_cert_generation_on_passing_self_paced(self):
         with mock.patch(
