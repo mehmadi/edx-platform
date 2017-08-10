@@ -57,13 +57,13 @@
                          inProgressCount = this.inProgressCourseCollection.length,
                          remainingCount = this.remainingCourseCollection.length,
                          totalCount = completedCount + inProgressCount + remainingCount,
-                         buy_button_url = this.options.urls.buy_button_url + '&program=' + encodeURIComponent(this.options.programData.uuid),
+                         buyButtonUrl = this.options.urls.buy_button_url + '&bundle=' + encodeURIComponent(this.options.programData.uuid),
                          data = {
                              totalCount: totalCount,
                              inProgressCount: inProgressCount,
                              remainingCount: remainingCount,
                              completedCount: completedCount,
-                             completeProgramURL: buy_button_url
+                             completeProgramURL: buyButtonUrl
                          };
                      data = $.extend(data, this.programModel.toJSON());
                      HtmlUtils.setHtml(this.$el, this.tpl(data));
