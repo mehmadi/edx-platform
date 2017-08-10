@@ -751,8 +751,6 @@ class EnrollInCourseTest(EnrollmentEventTestMixin, CacheIsolationTestCase):
     def test_enrollment(self):
         user = User.objects.create_user("joe", "joe@joe.com", "password")
         course_id = CourseKey.from_string("edX/Test101/2013")
-        # Cannot be converted to CourseLocator or CourseKey.from_string because both do not support
-        # course keys without a run. The test specifically tests functionality when run is not specified.
         course_id_partial = CourseKey.from_string("edX/Test101/")
 
         # Test basic enrollment

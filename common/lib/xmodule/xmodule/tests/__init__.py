@@ -17,21 +17,18 @@ import unittest
 
 from contextlib import contextmanager, nested
 from functools import wraps
-from lazy import lazy
-from mock import Mock, patch
-from operator import attrgetter
+from mock import Mock
 from path import Path as path
 
 from opaque_keys.edx.keys import CourseKey
 from xblock.field_data import DictFieldData
-from xblock.fields import ScopeIds, Scope, Reference, ReferenceList, ReferenceValueDict
+from xblock.fields import ScopeIds, Reference, ReferenceList, ReferenceValueDict
 from xmodule.assetstore import AssetMetadata
 from xmodule.error_module import ErrorDescriptor
 from xmodule.mako_module import MakoDescriptorSystem
 from xmodule.modulestore import ModuleStoreEnum
-from xmodule.modulestore.draft_and_published import DIRECT_ONLY_CATEGORIES, ModuleStoreDraftAndPublished
-from xmodule.modulestore.inheritance import InheritanceMixin, own_metadata
-from xmodule.modulestore.mongo.draft import DraftModuleStore
+from xmodule.modulestore.draft_and_published import ModuleStoreDraftAndPublished
+from xmodule.modulestore.inheritance import InheritanceMixin
 from xmodule.modulestore.xml import CourseLocationManager
 from xmodule.x_module import ModuleSystem, XModuleDescriptor, XModuleMixin
 
