@@ -3262,3 +3262,11 @@ COURSES_API_CACHE_TIMEOUT = 3600  # Value is in seconds
 
 ############## Settings for CourseGraph ############################
 COURSEGRAPH_JOB_QUEUE = LOW_PRIORITY_QUEUE
+
+
+############## Settings for ACE ####################################
+ACE_ENABLED_CHANNELS = [
+    'sailthru_email'
+]
+ACE_CHANNEL_SAILTHRU_DEBUG = True
+ACE_CHANNEL_SAILTHRU_TEMPLATE_NAME = 'edX Automated Communication Engine'

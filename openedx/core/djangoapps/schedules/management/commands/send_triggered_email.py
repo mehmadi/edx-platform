@@ -16,69 +16,12 @@ from openedx.core.djangoapps.schedules.tasks import send_email_batch
 from openedx.core.djangoapps.user_api.models import UserPreference
 
 from django.db import DEFAULT_DB_ALIAS, connections
+from django.template.loader import get_template
 
-class Command(BaseCommand):
-
-    def add_arguments(self, parser):
-        parser.add_argument('--date', default=datetime.datetime.utcnow().date().isoformat())
-
-    def handle(self, *args, **options):
-        current_date = datetime.date(*[int(x) for x in options['date'].split('-')])
-        target_date = current_date - datetime.timedelta(days=1)
-
-        self.send_verified_upgrade_reminder(target_date, 19)
-
-    def send_verified_upgrade_reminder(self, target_date, days_before_deadline):
-        deadline_date = target_date + datetime.timedelta(days=days_before_deadline)
-        deadline_date_range = (
-            datetime.datetime(deadline_date.year, deadline_date.month, deadline_date.day, 0, 0, tzinfo=tzutc()),
-            datetime.datetime(deadline_date.year, deadline_date.month, deadline_date.day, 23, 59, 59, 999999, tzinfo=tzutc())
-        )
-        schedules = Schedule.objects.filter(upgrade_deadline__range=deadline_date_range, active=True).order_by('enrollment__course_id')
-        print(schedules.query.sql_with_params())
-
-        template = ugettext_lazy(
-            # Translators: This is a verified upgrade deadline reminder. It is automatically sent to learners two days
-            # before the deadline.
-            textwrap.dedent(u"""
-                Dear {{ user_personal_address }},
-                <br/>
-                We hope you are enjoying {{ course_title }}. Upgrade by {{ user_schedule_verified_upgrade_deadline_time|human_readable_time }} to get a shareable certificate!
-                <br/>
-                {{ course_verified_upgrade_url|call_to_action_button('Upgrade now') }}
-            """).strip()
-        )
-
-        email_template = EmailTemplate(
-            subject=ugettext_lazy('Only two days left to upgrade!'),
-            content_template=template,
-            preview_text=ugettext_lazy('Upgrade today!'),
-        )
-        for schedule_batch in batch_iterator(schedules, 500):
-            batch = SailthruEmailBatch(
-                schedule_ids=[s.pk for s in schedule_batch],
-                email_template=email_template,
-                sailthru_template_name='Verified Upgrade Reminder'
-            )
-            send_email_batch(batch)
-
-    def send_weekly_update(self, target_date, week_number):
-        pass
-
-
-import itertools
-
-
-def batch_iterator(iterable, batch_size):
-    iterator = iter(iterable)
-
-    while True:
-        batch = list(itertools.islice(iterator, batch_size))
-        if len(batch) == 0:
-            break
-
-        yield batch
-
+from edx_ace.message import MessageType
+from edx_ace.recipient_resolver import RecipientResolver
+from edx_ace import ace
+from edx_ace.recipient import Recipient
 
 from collections import namedtuple
 
@@ -89,6 +32,42 @@ from openedx.core.djangoapps.content.course_overviews.models import CourseOvervi
 from course_modes.models import CourseMode, format_course_price
 from lms.djangoapps.commerce.utils import EcommerceService
 from util.date_utils import strftime_localized
+
+
+class VerifiedUpgradeDeadlineReminder(MessageType):
+    pass
+
+
+class VerifiedDeadlineResolver(RecipientResolver):
+    def __init__(self, target_deadline):
+        self.target_deadline = target_deadline
+
+    def send(self, msg_type):
+        for (user, context) in build_email_context(self.target_deadline):
+            msg = msg_type.personalize(
+                Recipient(
+                    user.username,
+                    user.email,
+                ),
+                context
+            )
+            ace.send(msg)
+
+
+class Command(BaseCommand):
+
+    def add_arguments(self, parser):
+        parser.add_argument('--date', default=datetime.datetime.utcnow().date().isoformat())
+
+    def handle(self, *args, **options):
+        current_date = datetime.date(*[int(x) for x in options['date'].split('-')])
+
+        msg_t = VerifiedUpgradeDeadlineReminder()
+
+        for offset in (2, 9, 16):
+            target_date = current_date + datetime.timedelta(days=offset)
+            VerifiedDeadlineResolver(target_date).send(msg_t)
+
 
 
 def get_upgrade_link(enrollment):
@@ -111,7 +90,7 @@ def get_upgrade_link(enrollment):
 from django.db import connection
 
 
-def build_email_context(schedule_ids, email_template):
+def build_email_context(schedule_deadline):
     schedules = Schedule.objects.select_related(
         'enrollment__user__profile',
         'enrollment__course',
@@ -127,16 +106,10 @@ def build_email_context(schedule_ids, email_template):
             to_attr='tzprefs'
         ),
     ).filter(
-        id__in=schedule_ids,
+        upgrade_deadline__year=schedule_deadline.year,
+        upgrade_deadline__month=schedule_deadline.month,
+        upgrade_deadline__day=schedule_deadline.day,
     )
-    print(schedules.query.sql_with_params())
-
-    context = {}
-    translated_template_cache = {}
-
-    template_env = Environment()
-    template_env.filters['human_readable_time'] = human_readable_time
-    template_env.filters['call_to_action_button'] = call_to_action_button
 
     conn = connections[DEFAULT_DB_ALIAS]
     capture = CaptureQueriesContext(conn)
@@ -171,89 +144,12 @@ def build_email_context(schedule_ids, email_template):
                 'course_end_time': course.end,
                 'course_verified_upgrade_url': get_upgrade_link(enrollment),
                 'course_verified_upgrade_price': format_course_price(course.verified_modes[0].min_price),
+                'course_language': course.language,
             }
 
-            with override_language(course.language):
-                translated_template = translated_template_cache.get(course.language)
-                if not translated_template:
-                    translated_template = template_env.from_string(unicode(email_template.content_template))
-                    translated_template_cache[course.language] = translated_template
-
-                email_context = {
-                    'template_subject': unicode(email_template.subject),
-                    'template_preview_text': unicode(email_template.preview_text),
-                    'template_body': translated_template.render(template_context),
-                    'template_from': template_context['course_title'],
-                }
-
-            context[user.email] = email_context
+            yield (user, template_context)
 
     if len(capture.captured_queries) > 4:
         for query in capture.captured_queries:
             print(query['sql'])
         raise Exception()
-
-    return context
-
-
-@contextfilter
-def human_readable_time(context, timestamp):
-    user_timezone_timestamp = timestamp.astimezone(context.get('user_time_zone', tzutc()))
-    return strftime_localized(user_timezone_timestamp, 'DATE_TIME')
-
-
-@contextfilter
-def call_to_action_button(context, url, text):
-    result = '<a href="{url}">{text}</a>'.format(url=url, text=escape(text))
-    if context.eval_ctx.autoescape:
-        return Markup(result)
-    return result
-
-
-from sailthru.sailthru_client import SailthruClient
-import time
-
-
-EmailTemplate = namedtuple('EmailTemplate', ['subject', 'content_template', 'preview_text'])
-
-
-class SailthruEmailBatch(namedtuple('_SailthruEmailBatchBase', ['schedule_ids', 'email_template', 'sailthru_template_name'])):
-
-    def send(self):
-        email_context = build_email_context(self.schedule_ids, self.email_template)
-        print(email_context)
-
-        if not hasattr(settings, 'SAILTHRU_API_KEY') or not hasattr(settings, 'SAILTHRU_API_SECRET'):
-            return
-
-        sailthru_client = SailthruClient(settings.SAILTHRU_API_KEY, settings.SAILTHRU_API_SECRET)
-
-        SAILTHRU_MAX_SEND_BATCH_SIZE = 100
-
-        for batch_email_addresses in batch_iterator(email_context.keys(), SAILTHRU_MAX_SEND_BATCH_SIZE):
-            self._wait_for_rate_limit(sailthru_client)
-
-            batch_context = {k:email_context[k] for k in batch_email_addresses}
-            response = sailthru_client.multi_send(
-                self.sailthru_template_name,
-                batch_email_addresses,
-                evars=batch_context,
-            )
-            if response.is_ok():
-                body = response.get_body()
-                sent_count = int(body.get("sent_count", 1))
-            else:
-                error = response.get_error()
-                # print("Error: " + error.get_message())
-                # print("Status Code: " + str(response.get_status_code()))
-                # print("Error Code: " + str(error.get_error_code()))
-
-    def _wait_for_rate_limit(self, sailthru_client):
-        rate_limit_info = sailthru_client.get_last_rate_limit_info('send', 'POST')
-        if rate_limit_info is not None:
-            remaining = int(rate_limit_info['remaining'])
-            reset_timestamp = int(rate_limit_info['reset'])
-            seconds_till_reset = reset_timestamp - time.time()
-            if remaining <= 0 and seconds_till_reset > 0:
-                print('Rate limit exceeded, sleeping for {0} seconds'.format(seconds_till_reset))
-                time.sleep(seconds_till_reset + 1)
