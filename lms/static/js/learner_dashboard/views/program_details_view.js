@@ -57,7 +57,7 @@
                          inProgressCount = this.inProgressCourseCollection.length,
                          remainingCount = this.remainingCourseCollection.length,
                          totalCount = completedCount + inProgressCount + remainingCount,
-                         buy_button_url = this.options.urls.buy_button_url + '&program=' + encodeURIComponent(this.options.programData.uuid)
+                         buy_button_url = this.options.urls.buy_button_url + '&program=' + encodeURIComponent(this.options.programData.uuid),
                          data = {
                              totalCount: totalCount,
                              inProgressCount: inProgressCount,
