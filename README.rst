@@ -1,4 +1,4 @@
-dfdgThis is the main edX platform which consists of LMS and Studio.
+dgdfg`dfdgThis is the main edX platform which consists of LMS and Studio.
 
 
 Installation
